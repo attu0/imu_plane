@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(my_bot)
+project(imu_plane)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -33,8 +33,20 @@ if(BUILD_TESTING)
 endif()
 
 install(
-  DIRECTORY config description launch worlds
+  DIRECTORY 
+  config 
+  description 
+  launch 
+  worlds
+  meshes
+  scripts
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  scripts/imu_node.py
+  scripts/tf_broadcaster_imu.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()
