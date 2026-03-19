@@ -33,11 +33,15 @@ class IMUNode(Node):
 
         time.sleep(0.1)
 
+        # Yaw tracking (gyro integration)
+        self.yaw = 0.0
+        self.last_time = self.get_clock().now()
+
         # Publishers
         self.imu_pub = self.create_publisher(Imu, 'imu/data_raw', 10)
         self.temp_pub = self.create_publisher(Temperature, 'temperature', 10)
 
-        # Stable frequency
+        # Timer
         self.timer = self.create_timer(0.05, self.publish_imu)   # 20 Hz
         self.temp_timer = self.create_timer(10.0, self.publish_temp)
 
@@ -75,34 +79,43 @@ class IMUNode(Node):
 
         msg = Imu()
 
+        # Time delta
+        current_time = self.get_clock().now()
+        dt = (current_time - self.last_time).nanoseconds * 1e-9
+        self.last_time = current_time
+
         # Read accelerometer
         accel_x = self.read_word_2c(ACCEL_XOUT_H) / 16384.0
         accel_y = self.read_word_2c(ACCEL_YOUT_H) / 16384.0
         accel_z = self.read_word_2c(ACCEL_ZOUT_H) / 16384.0
 
-        # Read gyroscope
-        gyro_x = self.read_word_2c(GYRO_XOUT_H) / 131.0
-        gyro_y = self.read_word_2c(GYRO_YOUT_H) / 131.0
-        gyro_z = self.read_word_2c(GYRO_ZOUT_H) / 131.0
+        # Read gyroscope (deg/s → rad/s)
+        gyro_x = self.read_word_2c(GYRO_XOUT_H) / 131.0 * 0.0174
+        gyro_y = self.read_word_2c(GYRO_YOUT_H) / 131.0 * 0.0174
+        gyro_z = self.read_word_2c(GYRO_ZOUT_H) / 131.0 * 0.0174
 
         # Convert acceleration to m/s²
         msg.linear_acceleration.x = accel_x * 9.8
         msg.linear_acceleration.y = accel_y * 9.8
         msg.linear_acceleration.z = accel_z * 9.8
 
-        # Convert gyro to rad/s
-        msg.angular_velocity.x = gyro_x * 0.0174
-        msg.angular_velocity.y = gyro_y * 0.0174
-        msg.angular_velocity.z = gyro_z * 0.0174
+        msg.angular_velocity.x = gyro_x
+        msg.angular_velocity.y = gyro_y
+        msg.angular_velocity.z = gyro_z
 
         # ==========================
-        # ✅ ORIENTATION CALCULATION
+        # ORIENTATION
         # ==========================
+
+        # Roll & Pitch from accelerometer
         roll = math.atan2(accel_y, accel_z)
         pitch = math.atan2(-accel_x, math.sqrt(accel_y**2 + accel_z**2))
-        yaw = 0.0  # no magnetometer
 
-        # Convert to quaternion
+        # Yaw from gyro integration
+        self.yaw += gyro_z * dt
+        yaw = self.yaw
+
+        # Quaternion conversion
         cy = math.cos(yaw * 0.5)
         sy = math.sin(yaw * 0.5)
         cp = math.cos(pitch * 0.5)
@@ -116,7 +129,7 @@ class IMUNode(Node):
         msg.orientation.z = cr * cp * sy - sr * sp * cy
 
         msg.header.frame_id = self.IMU_FRAME
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = current_time.to_msg()
 
         self.imu_pub.publish(msg)
 
