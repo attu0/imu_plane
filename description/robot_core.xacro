@@ -1,18 +1,37 @@
 <?xml version="1.0"?>
-<robot xmlns:xacro="http://www.ros.org/wiki/xacro" >
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- 🌍 WORLD FRAME -->
+    <link name="world"/>
 
     <!-- BASE LINK -->
+    <link name="chassis"/>
 
-    <link name="chassis">
+    <!-- IMU LINK -->
+    <link name="imu_link">
         <visual>
-            <origin xyz="0 0 0.15" rpy="0 0 0"/>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
                 <mesh filename="package://imu_plane/meshes/plane.stl" scale="0.001 0.001 0.001"/>
             </geometry>
-            <material name="grey">
-                <color rgba="0.5 0.5 0.5 1"/>
+            <material name="white">
+                <color rgba="1 1 1 1"/>
             </material>
         </visual>
     </link>
-    
+
+    <!-- 🔥 LIFT ROBOT INTO AIR -->
+    <joint name="world_to_chassis" type="fixed">
+        <parent link="world"/>
+        <child link="chassis"/>
+        <origin xyz="0 0 0.5" rpy="0 0 0"/>  <!-- 👈 0.5m above ground -->
+    </joint>
+
+    <!-- IMU ATTACHMENT -->
+    <joint name="imu_joint" type="fixed">
+        <parent link="chassis"/>
+        <child link="imu_link"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+
 </robot>

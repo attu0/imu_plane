@@ -26,13 +26,16 @@ class IMUTFBroadcaster(Node):
         t = TransformStamped()
 
         t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = "plane"
+
+        # ✅ FIXED FRAME
+        t.header.frame_id = "chassis"
         t.child_frame_id = "imu_link"
 
         t.transform.translation.x = 0.0
         t.transform.translation.y = 0.0
         t.transform.translation.z = 0.0
 
+        # Use IMU orientation
         t.transform.rotation = msg.orientation
 
         self.br.sendTransform(t)
