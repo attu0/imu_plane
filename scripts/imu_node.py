@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 import smbus
 import time
+import math
 from sensor_msgs.msg import Temperature, Imu
 from mpu_6050_driver.registers import *
 
@@ -17,10 +18,10 @@ class IMUNode(Node):
         self.ADDR = 0x68
         self.IMU_FRAME = "imu_link"
 
-        # ✅ Allow sensor to stabilize
+        # Allow sensor to stabilize
         time.sleep(0.5)
 
-        # ✅ Retry initialization
+        # Retry initialization
         for i in range(5):
             try:
                 self.bus.write_byte_data(self.ADDR, PWR_MGMT_1, 0)
@@ -30,14 +31,13 @@ class IMUNode(Node):
                 self.get_logger().warn(f"I2C init failed, retrying... {e}")
                 time.sleep(0.2)
 
-        # Small delay after wake-up
         time.sleep(0.1)
 
         # Publishers
         self.imu_pub = self.create_publisher(Imu, 'imu/data_raw', 10)
         self.temp_pub = self.create_publisher(Temperature, 'temperature', 10)
 
-        # ✅ Slightly slower rate for stability
+        # Stable frequency
         self.timer = self.create_timer(0.05, self.publish_imu)   # 20 Hz
         self.temp_timer = self.create_timer(10.0, self.publish_temp)
 
@@ -85,14 +85,35 @@ class IMUNode(Node):
         gyro_y = self.read_word_2c(GYRO_YOUT_H) / 131.0
         gyro_z = self.read_word_2c(GYRO_ZOUT_H) / 131.0
 
-        # Convert units
+        # Convert acceleration to m/s²
         msg.linear_acceleration.x = accel_x * 9.8
         msg.linear_acceleration.y = accel_y * 9.8
         msg.linear_acceleration.z = accel_z * 9.8
 
+        # Convert gyro to rad/s
         msg.angular_velocity.x = gyro_x * 0.0174
         msg.angular_velocity.y = gyro_y * 0.0174
         msg.angular_velocity.z = gyro_z * 0.0174
+
+        # ==========================
+        # ✅ ORIENTATION CALCULATION
+        # ==========================
+        roll = math.atan2(accel_y, accel_z)
+        pitch = math.atan2(-accel_x, math.sqrt(accel_y**2 + accel_z**2))
+        yaw = 0.0  # no magnetometer
+
+        # Convert to quaternion
+        cy = math.cos(yaw * 0.5)
+        sy = math.sin(yaw * 0.5)
+        cp = math.cos(pitch * 0.5)
+        sp = math.sin(pitch * 0.5)
+        cr = math.cos(roll * 0.5)
+        sr = math.sin(roll * 0.5)
+
+        msg.orientation.w = cr * cp * cy + sr * sp * sy
+        msg.orientation.x = sr * cp * cy - cr * sp * sy
+        msg.orientation.y = cr * sp * cy + sr * cp * sy
+        msg.orientation.z = cr * cp * sy - sr * sp * cy
 
         msg.header.frame_id = self.IMU_FRAME
         msg.header.stamp = self.get_clock().now().to_msg()
