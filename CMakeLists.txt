@@ -49,4 +49,9 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(
+  DIRECTORY mpu_6050_driver
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()
