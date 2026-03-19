@@ -3,6 +3,7 @@
 import rclpy
 from rclpy.node import Node
 import smbus
+import time
 from sensor_msgs.msg import Temperature, Imu
 from mpu_6050_driver.registers import *
 
@@ -16,20 +17,38 @@ class IMUNode(Node):
         self.ADDR = 0x68
         self.IMU_FRAME = "imu_link"
 
-        self.bus.write_byte_data(self.ADDR, PWR_MGMT_1, 0)
+        # ✅ Allow sensor to stabilize
+        time.sleep(0.5)
 
+        # ✅ Retry initialization
+        for i in range(5):
+            try:
+                self.bus.write_byte_data(self.ADDR, PWR_MGMT_1, 0)
+                self.get_logger().info("MPU6050 initialized successfully")
+                break
+            except Exception as e:
+                self.get_logger().warn(f"I2C init failed, retrying... {e}")
+                time.sleep(0.2)
+
+        # Small delay after wake-up
+        time.sleep(0.1)
+
+        # Publishers
         self.imu_pub = self.create_publisher(Imu, 'imu/data_raw', 10)
         self.temp_pub = self.create_publisher(Temperature, 'temperature', 10)
 
-        self.timer = self.create_timer(0.02, self.publish_imu)
+        # ✅ Slightly slower rate for stability
+        self.timer = self.create_timer(0.05, self.publish_imu)   # 20 Hz
         self.temp_timer = self.create_timer(10.0, self.publish_temp)
 
     def read_word(self, adr):
-
-        high = self.bus.read_byte_data(self.ADDR, adr)
-        low = self.bus.read_byte_data(self.ADDR, adr+1)
-        val = (high << 8) + low
-        return val
+        try:
+            high = self.bus.read_byte_data(self.ADDR, adr)
+            low = self.bus.read_byte_data(self.ADDR, adr + 1)
+            return (high << 8) + low
+        except Exception as e:
+            self.get_logger().warn(f"I2C read error: {e}")
+            return 0
 
     def read_word_2c(self, adr):
 
@@ -44,7 +63,9 @@ class IMUNode(Node):
 
         msg = Temperature()
 
-        msg.temperature = self.read_word_2c(TEMP_H)/340.0 + 36.53
+        temp_raw = self.read_word_2c(TEMP_H)
+        msg.temperature = temp_raw / 340.0 + 36.53
+
         msg.header.frame_id = self.IMU_FRAME
         msg.header.stamp = self.get_clock().now().to_msg()
 
@@ -54,14 +75,17 @@ class IMUNode(Node):
 
         msg = Imu()
 
+        # Read accelerometer
         accel_x = self.read_word_2c(ACCEL_XOUT_H) / 16384.0
         accel_y = self.read_word_2c(ACCEL_YOUT_H) / 16384.0
         accel_z = self.read_word_2c(ACCEL_ZOUT_H) / 16384.0
 
+        # Read gyroscope
         gyro_x = self.read_word_2c(GYRO_XOUT_H) / 131.0
         gyro_y = self.read_word_2c(GYRO_YOUT_H) / 131.0
         gyro_z = self.read_word_2c(GYRO_ZOUT_H) / 131.0
 
+        # Convert units
         msg.linear_acceleration.x = accel_x * 9.8
         msg.linear_acceleration.y = accel_y * 9.8
         msg.linear_acceleration.z = accel_z * 9.8
@@ -82,10 +106,12 @@ def main(args=None):
 
     node = IMUNode()
 
-    rclpy.spin(node)
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
 
     node.destroy_node()
-
     rclpy.shutdown()
 
 
